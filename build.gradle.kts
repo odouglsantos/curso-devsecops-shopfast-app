@@ -39,8 +39,8 @@ dependencies {
 
     // NOTA DIDATICA: versoes propositalmente desatualizadas, com CVEs conhecidos.
     // Serao usadas no modulo de SCA (Dependency-Check / Trivy).
-    implementation("org.apache.commons:commons-text:1.9")
-    implementation("commons-io:commons-io:2.6")
+    implementation("org.apache.commons:commons-text:1.10.0")
+    implementation("commons-io:commons-io:2.14.0")
 
     runtimeOnly("com.h2database:h2")
 
