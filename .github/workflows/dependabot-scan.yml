@@ -20,4 +20,4 @@ jobs:
           distribution: temurin
           java-version: '21'
       - name: Gradle Dependency Submission
-        uses: gradle/actions/dependency-submission@v4
+        uses: gradle/actions/dependency-submission@v6
