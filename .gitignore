@@ -19,3 +19,20 @@ gradle-app.setting
 .project
 # JDT-specific (Eclipse Java Development Tools)
 .classpath
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+
+# Build
+build/
+out/
+bin/
+
+# Local
+*.log
+.env
+
+# Relatorios gerados pelo OWASP ZAP (Modulo 3 - DAST)
+zap-report.*

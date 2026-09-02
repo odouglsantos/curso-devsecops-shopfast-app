@@ -1,0 +1,26 @@
+CREATE TABLE IF NOT EXISTS products (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    category VARCHAR(120) NOT NULL,
+    price DECIMAL(12, 2) NOT NULL,
+    stock_quantity INT NOT NULL DEFAULT 0,
+    description VARCHAR(2000)
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(120) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    role VARCHAR(40) NOT NULL,
+    credit_card_number VARCHAR(255)
+);
+
+CREATE TABLE IF NOT EXISTS orders (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    status VARCHAR(40) NOT NULL,
+    total DECIMAL(12, 2) NOT NULL,
+    coupon_code VARCHAR(60),
+    created_at TIMESTAMP NOT NULL
+);
