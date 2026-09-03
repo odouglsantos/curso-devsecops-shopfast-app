@@ -24,6 +24,19 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
+      - name: Debug da URL e do Erro 403
+        run: |
+          echo "=== CONTEÚDO DO REPORT-TASK ==="
+          cat .scannerwork/report-task.txt
+          
+          echo -e "\n=== EXTRAINDO A URL DO QUALITY GATE ==="
+          CE_TASK_URL=$(grep ceTaskUrl .scannerwork/report-task.txt | cut -d'=' -f2)
+          echo "O cURL vai tentar chamar: $CE_TASK_URL"
+          
+          echo -e "\n=== EXECUTANDO CHAMADA MANUAL COM MODO VERBOSE ==="
+          # O -v vai mostrar os cabeçalhos da resposta. Removi o --fail para não abortar e vermos o erro completo.
+          curl -s -v -u "${{ secrets.SONAR_TOKEN }}:" "$CE_TASK_URL"
+
       - name: SonarQube Quality Gate Check
         id: sonarqube-quality-gate-check
         uses: sonarsource/sonarqube-quality-gate-action@master
