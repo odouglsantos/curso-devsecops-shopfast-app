@@ -2,12 +2,12 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.*
 
 plugins {
-    kotlin("jvm") version "2.3.21"
-    kotlin("plugin.spring") version "2.3.21"
-    kotlin("plugin.jpa") version "2.3.21"
+    kotlin("jvm") version "2.4.10"
+    kotlin("plugin.spring") version "2.4.10"
+    kotlin("plugin.jpa") version "2.4.10"
     id("org.springframework.boot") version "4.1.1"
     id("io.spring.dependency-management") version "1.1.7"
-    id("org.sonarqube") version "7.4.0.8496"
+    id("org.sonarqube") version "7.5.0.8588"
     jacoco
 }
 
@@ -39,8 +39,8 @@ dependencies {
 
     // NOTA DIDATICA: versoes propositalmente desatualizadas, com CVEs conhecidos.
     // Serao usadas no modulo de SCA (Dependency-Check / Trivy).
-    implementation("org.apache.commons:commons-text:1.10.0")
-    implementation("commons-io:commons-io:2.14.0")
+    implementation("org.apache.commons:commons-text:1.15.0")
+    implementation("commons-io:commons-io:2.22.0")
 
     runtimeOnly("com.h2database:h2")
 
