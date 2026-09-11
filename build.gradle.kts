@@ -35,7 +35,7 @@ dependencies {
 
     // Contrato OpenAPI gerado em runtime (/v3/api-docs). E o que permite ao OWASP ZAP
     // descobrir sozinho rotas, metodos, query params e corpos no Modulo 3 (DAST).
-    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.9")
+    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1")
 
     // NOTA DIDATICA: versoes propositalmente desatualizadas, com CVEs conhecidos.
     // Serao usadas no modulo de SCA (Dependency-Check / Trivy).
