@@ -63,10 +63,10 @@ class SecurityConfig {
      */
     @Bean
     fun passwordEncoder(): PasswordEncoder = object : PasswordEncoder {
-        override fun encode(rawPassword: CharSequence): String =
+        override fun encode(rawPassword: CharSequence?): String =
             CryptoUtils.md5(rawPassword.toString())
 
-        override fun matches(rawPassword: CharSequence, encodedPassword: String): Boolean =
+        override fun matches(rawPassword: CharSequence?, encodedPassword: String?): Boolean =
             CryptoUtils.md5(rawPassword.toString()) == encodedPassword
     }
 
