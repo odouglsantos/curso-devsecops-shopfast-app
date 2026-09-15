@@ -36,3 +36,5 @@ bin/
 
 # Relatorios gerados pelo OWASP ZAP (Modulo 3 - DAST)
 zap-report.*
+
+docs/
