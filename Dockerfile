@@ -3,7 +3,7 @@ FROM eclipse-temurin:21-alpine AS build
 WORKDIR /app
 
 COPY gradlew gradlew
-COPY gradle gradlew
+COPY gradle gradle
 COPY build.gradle.kts settings.gradle.kts gradle.properties ./
 COPY src src
 
