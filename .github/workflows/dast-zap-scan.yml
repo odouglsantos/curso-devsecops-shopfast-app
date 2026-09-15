@@ -31,3 +31,6 @@ jobs:
           target: 'http://localhost:8080/v3/api-docs'
           format: openapi
           fail_action: true
+          # -m: cap do active scan em 10 min (evita scans muito longos em CI)
+          # -z: mais threads/hosts em paralelo para acelerar dentro da janela de tempo
+          cmd_options: '-m 10 -z "-config scanner.threadPerHost=10 -config scanner.hostPerScan=4"'
