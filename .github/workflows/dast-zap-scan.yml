@@ -1,6 +1,9 @@
 name: DAST - OWASP ZAP Scan
 
 on:
+  push:
+    branches:
+      - teste-owasp-zap
   workflow_dispatch:
   schedule:
     - cron: "0 3 * * 1"
