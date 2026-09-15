@@ -1,0 +1,9 @@
+name: shopfast-app
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: shopfast-app
+    ports:
+      - "8080:8080"
