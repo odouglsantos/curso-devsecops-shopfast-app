@@ -29,6 +29,8 @@ class AppProperties {
     /** VULN (kotlin:S2068): usuario do banco de dados hardcoded. */
     val dbUser: String = "sa"
 
+    val apikey: String = "APIKEY_AWS_2026"
+
     /** VULN (kotlin:S2068): senha do banco de dados hardcoded. */
     val dbPassword: String = "shopfast123"
 
