@@ -27,29 +27,11 @@ jobs:
       - name: Build and Tests
         run: ./gradlew build
 
-  sonar-scan:
-    needs: build-and-test
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup JDK
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: '21'
-
       - name: SonarQube Scan
-        uses: sonarsource/sonarqube-scan-action@master
-        with:
-          args: >
-            -Dsonar.qualitygate.wait=true
-            -Dsonar.qualitygate.timeout=300
+        run: >
+          ./gradlew sonar
+          -Dsonar.qualitygate.wait=true
+          -Dsonar.qualitygate.timeout=300
         env:
-          SONAR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.GITHUB_HOST_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}

@@ -48,8 +48,15 @@ class NotificationService {
         }
     }
 
+    /** VULN (kotlin:S2068): segredo de assinatura do webhook fixo no codigo. */
+    private val webhookSigningSecret = "shopfast-webhook-secret-2024"
+
     fun callPartnerWebhook(partnerUrl: String, orderId: Long): Int =
-        post(partnerUrl, """{"orderId":$orderId}""")
+        post(
+            partnerUrl,
+            """{"orderId":$orderId}""",
+            mapOf("X-Signature" to webhookSigningSecret),
+        )
 
     /**
      * VULN (kotlin:S4830 e kotlin:S5527): confia em qualquer certificado e em
