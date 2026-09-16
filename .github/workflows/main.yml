@@ -1,18 +1,32 @@
-name: Pipeline de PR
+name: Pipeline main
 
 on:
-  pull_request:
+  push:
     branches:
       - main
-    types:
-      - opened
-      - synchronize
-      - reopened
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
     environment: dev
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build and Tests
+        run: ./gradlew build
+
+  sonar-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,3 +49,43 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+  dast-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Start shopfast
+        run: docker compose up -d
+
+      - name: Health check
+        run: npx wait-on -t 60000 http://localhost:8080/actuator/health
+
+      - name: Logs
+        if: failure()
+        run: docker compose logs
+
+      - name: OWASP ZAP API Scan
+        uses: zaproxy/action-api-scan@v0.9.0
+        with:
+          target: http://localhost:8080/v3/api-docs
+          format: 'openapi'
+          fail_action: 'true'
+          cmd_options: '-m 10 -z "-config scanner.threadPerHost=20 config.scanner.hostPerScan=4"'
+
+
+
+
+
+
+
+
+
+
+
+
