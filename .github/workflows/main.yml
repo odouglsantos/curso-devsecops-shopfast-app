@@ -30,7 +30,6 @@ jobs:
   sonar-scan:
     needs: build-and-test
     runs-on: ubuntu-latest
-    environment: dev
     permissions:
       contents: read
       pull-requests: write
@@ -52,5 +51,5 @@ jobs:
             -Dsonar.qualitygate.wait=true
             -Dsonar.qualitygate.timeout=300
         env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.GITHUB_HOST_URL }}
