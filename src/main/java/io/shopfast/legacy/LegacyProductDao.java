@@ -20,7 +20,7 @@ import org.springframework.stereotype.Repository;
  * catalogo inteiro. Correcao aplicada:
  *
  * <ul>
- *   <li>todo valor vindo do usuario passa por {@link PreparedStatement}, entao o texto
+ *   <li>cada valor vindo do usuario passa por {@link PreparedStatement}, entao o texto
  *       digitado e tratado como dado e nunca como sintaxe SQL;
  *   <li>a coluna de ordenacao nao pode ser parametrizada em SQL, entao virou lista
  *       branca: o que o request manda so e aceito se for chave de {@link #SORT_COLUMNS};

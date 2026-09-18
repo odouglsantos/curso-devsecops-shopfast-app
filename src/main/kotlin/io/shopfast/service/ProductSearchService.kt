@@ -13,7 +13,7 @@ import java.sql.ResultSet
  * montavam a query concatenando o texto do request, e o analisador Kotlin do
  * SonarQube Community nao tem regra de injecao para apontar isso.
  *
- * Correcao: todo valor do usuario vai como parametro (`?`), a coluna de
+ * Correcao: cada valor do usuario vai como parametro (`?`), a coluna de
  * ordenacao — que o SQL nao deixa parametrizar — passa por lista branca, e o
  * filtro de preco e convertido para [BigDecimal] antes de chegar ao banco, o
  * que rejeita qualquer coisa que nao seja numero.
