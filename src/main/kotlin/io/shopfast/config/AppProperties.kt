@@ -1,43 +1,55 @@
 package io.shopfast.config
 
-import org.springframework.stereotype.Component
+import org.springframework.boot.context.properties.ConfigurationProperties
+import java.security.SecureRandom
+import java.util.Base64
 
 /**
  * Parametros de integracao do ShopFast.
  *
- * VULN (kotlin:S6418): chaves de API e secrets escritos direto no codigo-fonte.
- * Qualquer pessoa com acesso ao repositorio — ou ao .git de um clone antigo —
- * fica com a chave do gateway de pagamento na mao.
+ * Nada de segredo, credencial de banco ou IP de infraestrutura no codigo: as
+ * chaves vem de variavel de ambiente e, quando a variavel nao existe, um valor
+ * aleatorio e sorteado na subida — o laboratorio sobe sem que exista segredo
+ * versionado no repositorio.
  *
- * VULN (kotlin:S2068): credenciais de banco hardcoded.
- *
- * VULN (java:S1313 / kotlin:S1313): endereco IP de infraestrutura interna fixo
- * no codigo, o que ainda por cima entrega a topologia da rede.
+ * [allowedOrigins] e [allowedWebhookHosts] sao listas brancas: a primeira fecha
+ * o CORS, a segunda fecha o SSRF do disparo de webhooks.
  */
-@Component
-class AppProperties {
+@ConfigurationProperties(prefix = "shopfast")
+class AppProperties(
+    jwtSecret: String = "",
+    paymentApiKey: String = "",
+    encryptionKey: String = "",
+    webhookSigningSecret: String = "",
+    val billingBaseUrl: String = "https://billing.internal.shopfast.io",
+    val partnerWebhook: String = "https://partners.shopfast.io/webhooks/orders",
+    val reportDirectory: String = "/var/shopfast/reports",
+    /** Origens autorizadas a chamar a API pelo navegador. Vazio = nenhuma. */
+    val allowedOrigins: List<String> = emptyList(),
+    /** Hosts para os quais o ShopFast aceita disparar webhook. */
+    val allowedWebhookHosts: List<String> = emptyList(),
+) {
 
-    /** VULN (kotlin:S6418): chave de assinatura dos tokens de sessao no codigo. */
-    val jwtSecret: String = "shopfast-super-secret-key-2026"
+    /** Chave de assinatura HMAC dos tokens de sessao. */
+    val jwtSecret: String = jwtSecret.ifBlank { randomSecret() }
 
-    /** VULN (kotlin:S6418): credencial de producao do gateway de pagamento. */
-    val paymentApiKey: String = "sk_live_51H8xQ2KzWqR7vNmT3bYcL9pA"
+    /** Credencial do gateway de pagamento. */
+    val paymentApiKey: String = paymentApiKey.ifBlank { randomSecret() }
 
-    /** VULN (kotlin:S6418): chave de criptografia dos cartoes. */
-    val encryptionKey: String = "ShopFast2026SecretKey!!"
+    /** Chave usada para derivar a chave AES de dados sensiveis. */
+    val encryptionKey: String = encryptionKey.ifBlank { randomSecret() }
 
-    /** VULN (kotlin:S2068): usuario do banco de dados hardcoded. */
-    val dbUser: String = "sa"
+    /** Segredo de assinatura dos webhooks enviados a parceiros. */
+    val webhookSigningSecret: String = webhookSigningSecret.ifBlank { randomSecret() }
 
-    val apikey: String = "APIKEY_AWS_2026"
+    private companion object {
+        private const val SECRET_BYTES = 32
+        private val RANDOM = SecureRandom()
 
-    /** VULN (kotlin:S2068): senha do banco de dados hardcoded. */
-    val dbPassword: String = "shopfast123"
-
-    /** VULN (kotlin:S1313): IP interno fixo no codigo. */
-    val billingHost: String = "10.42.13.7"
-
-    val partnerWebhook: String = "http://10.42.13.7/webhooks/orders"
-
-    val reportDirectory: String = "/var/shopfast/reports"
+        fun randomSecret(): String {
+            val bytes = ByteArray(SECRET_BYTES)
+            RANDOM.nextBytes(bytes)
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+        }
+    }
 }

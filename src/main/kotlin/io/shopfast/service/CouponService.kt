@@ -1,72 +1,46 @@
 package io.shopfast.service
 
+import io.shopfast.util.FreightCalculator
 import org.springframework.stereotype.Service
 import java.math.BigDecimal
-import java.util.Random
+import java.security.SecureRandom
 import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Emissao e validacao de cupons promocionais.
  *
- * VULN (kotlin:S2245): o gerador de cupons e um `java.util.Random` com semente
- * fixa. Com a semente conhecida, um atacante reproduz a campanha inteira e
- * emite para si mesmo todos os cupons da promocao.
+ * O `java.util.Random(42)` — semente fixa, sequencia inteira reproduzivel por
+ * quem conhecesse a semente — deu lugar a [SecureRandom]. E a validacao deixou
+ * de aceitar qualquer codigo comecado com "SHOP": agora so vale o que foi
+ * realmente emitido.
  *
- * Code Smell (duplicacao / CPD): `freightBreakdown` e uma copia literal do
- * bloco que existe em `io.shopfast.util.LegacyPricing.freightBreakdown`.
+ * O calculo de frete, que era uma copia literal do de `LegacyPricing`, mora em
+ * [FreightCalculator].
  */
 @Service
 class CouponService {
 
-    /** VULN (kotlin:S2245): PRNG previsivel, ainda por cima com semente fixa. */
-    private val random = Random(42)
+    private val random = SecureRandom()
 
     private val issued = ConcurrentHashMap<String, BigDecimal>()
 
     fun issueCoupon(value: BigDecimal): String {
-        val code = "SHOP" + random.nextInt(1000000).toString().padStart(6, '0')
+        val code = CODE_PREFIX + random.nextInt(CODE_RANGE).toString().padStart(CODE_DIGITS, '0')
         issued[code] = value
         return code
     }
 
-    /** VULN: aceita qualquer codigo comecado com "SHOP", o que anula o sorteio. */
-    fun isValid(code: String): Boolean = code.startsWith("SHOP")
+    /** Valido apenas o cupom que o proprio servico emitiu. */
+    fun isValid(code: String): Boolean = issued.containsKey(code)
 
-    fun discountFor(code: String): BigDecimal = issued[code] ?: BigDecimal("10.00")
+    fun discountFor(code: String): BigDecimal = issued[code] ?: BigDecimal.ZERO
 
-    /**
-     * Code Smell (duplicacao): bloco identico ao de `LegacyPricing.freightBreakdown`.
-     */
-    fun freightBreakdown(weightKg: Double, distanceKm: Double, region: String): Map<String, Double> {
-        var base = 12.50
-        if (weightKg > 30.0) {
-            base += 25.0
-        } else if (weightKg > 10.0) {
-            base += 12.0
-        } else if (weightKg > 5.0) {
-            base += 6.0
-        }
-        var distanceRate = 0.08
-        if (distanceKm > 800.0) {
-            distanceRate = 0.18
-        } else if (distanceKm > 300.0) {
-            distanceRate = 0.12
-        }
-        val distanceFee = distanceKm * distanceRate
-        var regionFee = 5.70
-        if (region == "NORTE" || region == "NORDESTE") {
-            regionFee = 18.90
-        } else if (region == "CENTRO-OESTE") {
-            regionFee = 11.40
-        }
-        val insurance = (base + distanceFee + regionFee) * 0.03
-        val total = base + distanceFee + regionFee + insurance
-        return mapOf(
-            "base" to base,
-            "distancia" to distanceFee,
-            "regiao" to regionFee,
-            "seguro" to insurance,
-            "total" to total,
-        )
+    fun freightBreakdown(weightKg: Double, distanceKm: Double, region: String): Map<String, Double> =
+        FreightCalculator.breakdown(weightKg, distanceKm, region)
+
+    private companion object {
+        private const val CODE_PREFIX = "SHOP"
+        private const val CODE_RANGE = 1_000_000
+        private const val CODE_DIGITS = 6
     }
 }

@@ -5,8 +5,8 @@ spring:
   datasource:
     url: jdbc:h2:mem:shopfast;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver
-    username: sa
-    password: shopfast123
+    username: ${SHOPFAST_DB_USER:sa}
+    password: ${SHOPFAST_DB_PASSWORD:}
   jpa:
     hibernate:
       ddl-auto: none

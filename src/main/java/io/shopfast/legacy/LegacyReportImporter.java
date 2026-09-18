@@ -1,82 +1,118 @@
 package io.shopfast.legacy;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.type.MapType;
+import io.shopfast.config.AppProperties;
+import io.shopfast.util.ReportPaths;
 import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.ObjectInputStream;
+import java.io.IOException;
 import java.net.HttpURLConnection;
-import java.net.URL;
+import java.net.URI;
 import java.nio.file.Files;
-import java.util.Base64;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.w3c.dom.Document;
+import org.xml.sax.SAXException;
 
 /**
  * Importador legado de relatorios de parceiros, ainda em Java.
  *
- * <p>Achados do analisador Java do SonarQube:
+ * <p>Fechadas aqui as mesmas falhas da camada Kotlin:
  *
  * <ul>
- *   <li>VULN (java:S2755) — XXE: o parser aceita DTD e entidades externas, entao um
- *       {@code <!ENTITY x SYSTEM "file:///etc/passwd">} le arquivos do servidor;
- *   <li>VULN (java:S1313) — endereco IP de infraestrutura interna fixo no codigo;
- *   <li>Code Smell (java:S112) — {@code throws Exception} generico;
- *   <li>Code Smell (java:S1075) — caminho absoluto e separador de diretorio escritos
- *       na mao.
+ *   <li><b>XXE</b> (java:S2755): o parser recusa DOCTYPE e nao busca recurso externo;
+ *   <li><b>Path traversal</b>: nome por lista branca e caminho conferido contra o
+ *       diretorio base, em {@link ReportPaths};
+ *   <li><b>Command injection</b>: sem shell — {@link ProcessBuilder} com lista de
+ *       argumentos e nome de relatorio ja validado;
+ *   <li><b>Desserializacao insegura</b>: {@code ObjectInputStream} saiu; o snapshot e
+ *       JSON lido como mapa, sem tipagem polimorfica;
+ *   <li>java:S1313 / java:S5332: o endereco de cobranca vem de configuracao, por HTTPS,
+ *       em vez de um IP interno fixo no codigo em HTTP puro;
+ *   <li>java:S112 / java:S1075: excecoes especificas e caminho vindo de configuracao.
  * </ul>
- *
- * <p>VULN (didatica): path traversal em {@link #readReport(String)}, command injection
- * em {@link #exportToPdf(String)} e desserializacao insegura em
- * {@link #restoreSnapshot(String)} — o SonarQube Community nao os detecta, e eles sao
- * o material do Modulo 3 (DAST).
  */
 @Component
 public class LegacyReportImporter {
 
-    /** Code Smell (java:S1075): caminho absoluto hardcoded. */
-    private static final String REPORT_DIR = "/var/shopfast/reports";
+    private static final Logger LOGGER = LoggerFactory.getLogger(LegacyReportImporter.class);
 
-    /** VULN (java:S1313): IP de infraestrutura interna no codigo. */
-    private static final String BILLING_HOST = "10.42.13.7";
+    private static final String DISALLOW_DOCTYPE =
+            "http://apache.org/xml/features/disallow-doctype-decl";
+    private static final String WKHTMLTOPDF = "/usr/bin/wkhtmltopdf";
+    private static final long PROCESS_TIMEOUT_SECONDS = 30L;
 
-    /**
-     * VULN (java:S2755 / XXE): o parser fica com a configuracao padrao, que expande
-     * entidades externas.
-     *
-     * <p>Code Smell (java:S112): declara {@code throws Exception}.
-     */
-    public int importPartnerReport(String xml) throws Exception {
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    private final String reportDirectory;
+    private final String billingBaseUrl;
+
+    public LegacyReportImporter(AppProperties properties) {
+        this.reportDirectory = properties.getReportDirectory();
+        this.billingBaseUrl = properties.getBillingBaseUrl();
+    }
+
+    /** Parser sem DTD e sem entidades externas. */
+    public int importPartnerReport(String xml)
+            throws ParserConfigurationException, SAXException, IOException {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-        factory.setExpandEntityReferences(true);
+        factory.setFeature(DISALLOW_DOCTYPE, true);
+        factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+        factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+        factory.setXIncludeAware(false);
+        factory.setExpandEntityReferences(false);
+
         DocumentBuilder builder = factory.newDocumentBuilder();
         Document document = builder.parse(new ByteArrayInputStream(xml.getBytes()));
         return document.getElementsByTagName("item").getLength();
     }
 
-    /** VULN (didatica): objeto Java reconstruido a partir de conteudo do cliente. */
-    public Object restoreSnapshot(String base64Payload) throws Exception {
-        byte[] bytes = Base64.getDecoder().decode(base64Payload);
-        ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(bytes));
-        return input.readObject();
+    /** Snapshot em JSON: sem instanciacao de classe arbitraria, sem gadget chain. */
+    public Map<String, Object> restoreSnapshot(String payload) throws IOException {
+        MapType type = objectMapper
+                .getTypeFactory()
+                .constructMapType(java.util.LinkedHashMap.class, String.class, Object.class);
+        return objectMapper.readValue(payload, type);
     }
 
-    /** VULN (didatica / java:S1075): path traversal — o nome vem do request e e concatenado. */
-    public String readReport(String fileName) throws Exception {
-        File file = new File(REPORT_DIR + "/" + fileName);
-        return new String(Files.readAllBytes(file.toPath()));
+    /** Caminho conferido contra o diretorio base antes de qualquer leitura. */
+    public String readReport(String fileName) throws IOException {
+        return Files.readString(ReportPaths.resolveInside(reportDirectory, fileName));
     }
 
-    /** VULN (didatica): o parametro do request e interpretado pelo shell. */
-    public void exportToPdf(String reportName) throws Exception {
-        String command = "wkhtmltopdf " + REPORT_DIR + "/" + reportName + ".html";
-        Runtime.getRuntime().exec(new String[] {"/bin/sh", "-c", command});
+    /** Sem shell: o nome do relatorio nunca chega a ser interpretado como comando. */
+    public void exportToPdf(String reportName) throws IOException {
+        String safeName = ReportPaths.requireSafeName(reportName);
+        Path source = ReportPaths.resolveInside(reportDirectory, safeName + ".html");
+        Path target = ReportPaths.resolveInside(reportDirectory, safeName + ".pdf");
+
+        Process process = new ProcessBuilder(
+                        List.of(WKHTMLTOPDF, source.toString(), target.toString()))
+                .start();
+        try {
+            if (!process.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                LOGGER.error("Exportacao de relatorio excedeu o tempo limite");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Exportacao de relatorio interrompida", e);
+        }
     }
 
-    /** VULN (java:S1313 e java:S5332): HTTP puro para um IP interno fixo no codigo. */
-    public int notifyBilling(long orderId) throws Exception {
-        URL url = new URL("http://" + BILLING_HOST + "/billing/orders/" + orderId);
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+    /** Cobranca por HTTPS, com o endereco vindo de configuracao. */
+    public int notifyBilling(long orderId) throws IOException {
+        URI uri = URI.create(billingBaseUrl + "/billing/orders/" + orderId);
+        HttpURLConnection connection = (HttpURLConnection) uri.toURL().openConnection();
         connection.setRequestMethod("POST");
         return connection.getResponseCode();
     }

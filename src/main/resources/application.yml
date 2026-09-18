@@ -4,47 +4,42 @@ spring:
   datasource:
     url: jdbc:h2:mem:shopfast;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver
-    # VULN (java:S6437 / java:S2068): credenciais do banco versionadas no repositorio.
-    username: sa
-    password: shopfast123
+    # Credenciais vem do ambiente; nada de senha versionada no repositorio.
+    username: ${SHOPFAST_DB_USER:sa}
+    password: ${SHOPFAST_DB_PASSWORD:}
   jpa:
     hibernate:
       ddl-auto: none
-    # VULN (didatica): SQL exposto em log. Mantido para o Modulo 3.
-    show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
+    # SQL fora do log: a query carrega dado de cliente.
+    show-sql: false
   sql:
     init:
       mode: always
   h2:
     console:
-      # VULN (didatica): console web do banco habilitado. Mantido para o Modulo 3.
-      enabled: true
-      path: /h2-console
-      settings:
-        web-allow-others: true
+      # Console web do banco desligado: dava shell de SQL sem autenticacao.
+      enabled: false
 
 server:
   port: 8080
   error:
-    # VULN (didatica): stacktrace devolvido ao cliente. Mantido para o Modulo 3.
-    include-message: always
-    include-stacktrace: always
-    include-binding-errors: always
+    # Sem stacktrace, sem mensagem interna e sem detalhe de binding na resposta:
+    # tudo isso entregava versao de biblioteca, caminho interno e estrutura do banco.
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
 
 management:
   endpoints:
     web:
       exposure:
-        # VULN (didatica): Actuator inteiramente exposto. Mantido para o Modulo 3.
-        include: "*"
+        # So o health fica aberto (ver SecurityConfig); o resto exige ADMIN.
+        include: health
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized
     env:
-      show-values: always
+      show-values: never
 
 # Contrato OpenAPI servido pela propria aplicacao.
 # O ZAP importa /v3/api-docs e passa a conhecer rotas, verbos, query params e
@@ -56,20 +51,25 @@ springdoc:
   swagger-ui:
     enabled: true
     path: /swagger-ui.html
-  # Inclui os endpoints do Actuator no contrato, para o ZAP atacar tambem eles.
-  show-actuator: true
+  show-actuator: false
 
 logging:
   level:
     root: INFO
-    io.shopfast: DEBUG
-    org.springframework.security: DEBUG
+    io.shopfast: INFO
+    org.springframework.security: INFO
 
 shopfast:
-  # VULN (java:S6437): segredos de producao em arquivo de configuracao versionado.
-  jwt-secret: shopfast-super-secret-key-2026
-  payment-api-key: sk_live_51H8xQ2KzWqR7vNmT3bYcL9pA
-  encryption-key: ShopFast2026SecretKey!!
-  billing-host: 10.42.13.7
-  partner-webhook: http://10.42.13.7/webhooks/orders
-  report-directory: /var/shopfast/reports
+  # Segredos vem do ambiente. Sem a variavel definida, a aplicacao sorteia um
+  # valor aleatorio na subida (ver AppProperties) — o repositorio nunca carrega
+  # segredo de producao.
+  jwt-secret: ${SHOPFAST_JWT_SECRET:}
+  payment-api-key: ${SHOPFAST_PAYMENT_API_KEY:}
+  encryption-key: ${SHOPFAST_ENCRYPTION_KEY:}
+  webhook-signing-secret: ${SHOPFAST_WEBHOOK_SECRET:}
+  billing-base-url: ${SHOPFAST_BILLING_BASE_URL:https://billing.internal.shopfast.io}
+  partner-webhook: ${SHOPFAST_PARTNER_WEBHOOK:https://partners.shopfast.io/webhooks/orders}
+  report-directory: ${SHOPFAST_REPORT_DIR:/var/shopfast/reports}
+  # Listas brancas: vazio = nada liberado. CORS e destino de webhook (anti-SSRF).
+  allowed-origins: ${SHOPFAST_ALLOWED_ORIGINS:}
+  allowed-webhook-hosts: ${SHOPFAST_ALLOWED_WEBHOOK_HOSTS:partners.shopfast.io}
