@@ -78,6 +78,17 @@ jobs:
           fail_action: 'true'
           cmd_options: '-m 10 -z "-config scanner.threadPerHost=20 config.scanner.hostPerScan=4"'
 
+  consolidate-reports:
+    needs: [build-and-test, sonar-scan, dast-scan]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resumo no Job Summary
+        run: |
+          echo "## Relatório Consolidado de Segurança - ShopFast" >> $GITHUB_STEP_SUMMARY
+          echo "- Build e Tests: verificar status do job build-and-test" >> $GITHUB_STEP_SUMMARY
+          echo "- SAST (SonarQube): verificar link do projeto no dashboard" >> $GITHUB_STEP_SUMMARY
+          echo "- DAST (OWASP ZAP): verificar log do job dast-scan" >> $GITHUB_STEP_SUMMARY
 
 
 
