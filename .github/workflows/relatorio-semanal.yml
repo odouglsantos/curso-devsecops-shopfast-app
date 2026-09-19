@@ -55,17 +55,20 @@ jobs:
       - name: Contagem OWASP ZAP por risco
         run: |
           RUN_ID=$(gh run list --workflow=main.yml --branch=main --limit=1 \
-            --json databaseId --jq '.[0].databaseId')
+            --json databaseId --jq '.[0].databaseId') || RUN_ID=""
 
-          if gh run download "$RUN_ID" --name zap-report --dir zap; then
+          if [ -n "$RUN_ID" ] && gh run download "$RUN_ID" --name zap-report --dir zap; then
             jq -r '[.site[].alerts[]] | group_by(.riskdesc | split(" ")[0])
                    | map("  \(.[0].riskdesc | split(" ")[0]): \(length)") | .[]' \
               zap/report_json.json > zap-contagem.txt
           else
-            echo "  (sem relatorio do ZAP na execucao $RUN_ID)" > zap-contagem.txt
+            echo "  (sem relatorio do ZAP na execucao ${RUN_ID:-desconhecida})" > zap-contagem.txt
           fi
+
+          [ -s zap-contagem.txt ] || echo "  Nenhum alerta encontrado" > zap-contagem.txt
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
 
       - name: Montar relatorio consolidado
         run: |
