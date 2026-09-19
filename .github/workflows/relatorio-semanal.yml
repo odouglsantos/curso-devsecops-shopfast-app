@@ -1,0 +1,63 @@
+name: Relatorio Semanal - ShopFast
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  relatorio-semanal:
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Contagem SonarQube por Severidade
+        run: |
+          curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
+            "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=shopfast-app&resolved=false" \
+          | jq -r '.issues | group_by(.severity) | map("  \(.[0].severity): \(length)") | .[]' > sonar-contagem.txt
+      - name: Contagem Dependabot por severidade
+        run: |
+          gh api "repos/${{ github.repository }}/dependabot/alerts" -jq \
+            '[.[] | select(.state=="open")]' | group_by(.security_advisory.severity) | map("  \(.[0].security_advisory.severity): \(length)") \
+           > dependabot-contagem.txt
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Contagem OWASP ZAP por risco
+        run: |
+          RUN_ID=$(gh run list --workflow=main.yml --branch=main --limit=1 --json databaseId --jq '.[0].databaseId') \
+          if gh run download "$RUN_ID" --name zap-report --dir zap; \
+            then jq -r '[.site[].alerts[]] | group_by(.riskdesc | split("")[0])' | map (" \(.[0].riskdesc | split(" ")[0]): (length)") | .[]' \
+          zap/report_json.json > zap-contagem.txt \
+          else \
+          echo "  (sem relatório do ZAP na execução $RUN_ID  " > zap-contagem.txt
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Montar relatorio consolidade
+        run: |
+          {
+            echo "Relatorio Semanal de Segurança - ShopFast"
+            echo "Gerado em: $(date +d%/%m/%Y)"
+            echo ""
+            echo "SonarQueb - SAST:"
+            cat sonar-contagem.txt
+            echo "OWASP ZAP - DAST:"
+            cat zap-contagem.txt
+            echo "Dependabot (SCA)":
+            cat dependabot-contagem.txt
+          } > relatorio-semanal.txt
+          
+          {
+            echo '```'
+            cat relatorio-semanal.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload do relatorio
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorio-semanal
+          path: relatorio-semanal.txt
