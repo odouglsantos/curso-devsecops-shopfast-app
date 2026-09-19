@@ -1,0 +1,102 @@
+name: Pipeline main
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-tests:
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build
+        run: ./gradlew build -x test
+
+      - name: Tests
+        run: ./gradlew test
+
+  quality-scan:
+    runs-on: ubuntu-latest
+    environment: dev
+    needs:
+      - build-and-tests
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: SonarQube Scan
+        run: ./gradlew sonar -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+  dast-scan:
+    runs-on: ubuntu-latest
+    environment: dev
+    needs:
+      - build-and-tests
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Start shopfast
+        run: docker compose up -d
+
+      - name: Health Check
+        run: npx wait-on -t 60000 http://localhost:8080/actuator/health
+
+      - name: Logs
+        if: failure()
+        run: docker compose logs
+
+      - name: OWASP ZAP API Scan
+        uses: zaproxy/action-api-scan@v0.9.0
+        with:
+          target: http://localhost:8080/v3/api-docs
+          format: 'openapi'
+          fail_action: 'true'
+          cmd_options: '-m 10 -z "-config scanner.threadPerHost=20 config.scanner.hostPerScan=4"'
+
+  consolidate-reports:
+    needs:
+      - build-and-tests
+      - quality-scan
+      - dast-scan
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resumo no Job Summary
+        run: |
+          echo "## Relatorio Consolidado de Segurança e Qualidade - ShopFast" >> $GITHUB_STEP_SUMMARY
+          echo "- Build e tests: verificar status do job build-and-test" >> $GITHUB_STEP_SUMMARY
+          echo "- SAST (SonarQube): verificar link do projeto no dashboard" $GITHUB_STEP_SUMMARY
+          echo "- DAST (OWASP ZAP): verificar log do job dast-scan" > $GITHUB_STEP_SUMMARY
+        
+        
+        
+        
+    
