@@ -12,7 +12,8 @@ import org.springframework.web.bind.annotation.RestController
 /**
  * Expoe a camada legada em Java, que ainda nao foi migrada para Kotlin.
  *
- * E por aqui que se reproduz, na pratica, o SQL Injection demonstrado na Aula 2.4.
+ * Passou a exigir o papel ADMIN (ver `SecurityConfig`): sao rotas internas de
+ * manutencao, sem razao para ficarem publicas.
  */
 @RestController
 @RequestMapping("/api/legacy")
@@ -21,7 +22,6 @@ class LegacyController(
     private val legacyReportImporter: LegacyReportImporter,
 ) {
 
-    /** Reproducao: /api/legacy/search?q=' OR '1'='1 */
     @GetMapping("/search")
     fun search(@RequestParam("q") term: String): List<String> = legacyProductDao.searchByName(term)
 
@@ -31,13 +31,12 @@ class LegacyController(
         @RequestParam("sort", defaultValue = "name") sort: String,
     ): List<String> = legacyProductDao.searchByCategory(category, sort)
 
-    /** Reproducao: /api/legacy/import com um XML contendo ENTITY SYSTEM "file:///etc/passwd" */
     @PostMapping("/import")
     fun import(@RequestBody xml: String): Int = legacyReportImporter.importPartnerReport(xml)
 
     @PostMapping("/restore")
-    fun restore(@RequestBody payload: String): String =
-        legacyReportImporter.restoreSnapshot(payload).toString()
+    fun restore(@RequestBody payload: String): Map<String, Any> =
+        legacyReportImporter.restoreSnapshot(payload)
 
     @GetMapping("/file")
     fun readFile(@RequestParam("name") name: String): String = legacyReportImporter.readReport(name)

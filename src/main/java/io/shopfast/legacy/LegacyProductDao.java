@@ -1,101 +1,97 @@
 package io.shopfast.legacy;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import javax.sql.DataSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
 
 /**
  * DAO legado do ShopFast, escrito em Java antes da migracao para Kotlin.
  *
- * <p>Motivo de existir em Java: o analisador Kotlin do SonarQube Community nao possui
- * regras de injecao (SQL, comando, XXE). O analisador Java possui. Por isso o achado de
- * <b>SQL Injection</b> das Aulas 2.4 e 2.6 mora aqui.
+ * <p>Era o achado central de <b>SQL Injection</b> (java:S2077) do projeto: as consultas
+ * montavam o SQL concatenando texto vindo do request, e {@code ' OR '1'='1} devolvia o
+ * catalogo inteiro. Correcao aplicada:
  *
- * <p>VULN (java:S2077) x3: as tres consultas abaixo montam o SQL concatenando texto
- * vindo do request. Um termo como {@code ' OR '1'='1} devolve o catalogo inteiro, e
- * {@code '; DROP TABLE products; --} chega a destruir a tabela.
- *
- * <p>VULN (java:S2115 e java:S2068): a URL, o usuario e a senha do banco estao fixos no
- * codigo, em vez de virem do {@code DataSource} gerenciado pelo Spring.
+ * <ul>
+ *   <li>cada valor vindo do usuario passa por {@link PreparedStatement}, entao o texto
+ *       digitado e tratado como dado e nunca como sintaxe SQL;
+ *   <li>a coluna de ordenacao nao pode ser parametrizada em SQL, entao virou lista
+ *       branca: o que o request manda so e aceito se for chave de {@link #SORT_COLUMNS};
+ *   <li>a conexao vem do {@link DataSource} do Spring, e nao de URL, usuario e senha
+ *       fixos no codigo (java:S2115 / java:S2068);
+ *   <li>a excecao vai para o log, em vez de {@code printStackTrace} no stdout.
+ * </ul>
  */
 @Repository
 public class LegacyProductDao {
 
-    /** VULN (java:S2115 / java:S2068): credenciais de banco hardcoded. */
-    private static final String DB_URL = "jdbc:h2:mem:shopfast;DB_CLOSE_DELAY=-1";
-    private static final String DB_USER = "sa";
-    private static final String DB_PASSWORD = "shopfast123";
+    private static final Logger LOGGER = LoggerFactory.getLogger(LegacyProductDao.class);
 
-    /**
-     * VULN (java:S2077): o termo digitado e concatenado direto no texto da query.
-     *
-     * <p>Reproducao: {@code /api/legacy/search?q=' OR '1'='1}
-     */
+    /** Lista branca de ordenacao: a chave vem do request, o SQL e escrito aqui. */
+    private static final Map<String, String> SORT_COLUMNS = Map.of(
+            "name", "SELECT name FROM products WHERE category = ? ORDER BY name",
+            "price", "SELECT name FROM products WHERE category = ? ORDER BY price",
+            "stock", "SELECT name FROM products WHERE category = ? ORDER BY stock_quantity");
+
+    private static final String DEFAULT_SORT = "name";
+
+    private final DataSource dataSource;
+
+    public LegacyProductDao(DataSource dataSource) {
+        this.dataSource = dataSource;
+    }
+
+    /** O termo digitado vai como parametro, nunca concatenado ao texto da query. */
     public List<String> searchByName(String searchTerm) {
-        String query = "SELECT name FROM products WHERE name LIKE '%" + searchTerm + "%'";
-        return executeQuery(query);
+        String query = "SELECT name FROM products WHERE name LIKE ?";
+        return executeQuery(query, "%" + searchTerm + "%");
     }
 
     /**
-     * VULN (java:S2077): categoria e coluna de ordenacao concatenadas, as duas vindas
-     * do request sem qualquer validacao.
+     * A categoria vai como parametro. A coluna de ordenacao, que o SQL nao permite
+     * parametrizar, e resolvida pela lista branca {@link #SORT_COLUMNS}.
      */
     public List<String> searchByCategory(String category, String sortColumn) {
-        String query = "SELECT name FROM products WHERE category = '" + category
-                + "' ORDER BY " + sortColumn;
-        return executeQuery(query);
+        String query = SORT_COLUMNS.get(sortColumn);
+        if (query == null) {
+            LOGGER.warn("Ordenacao nao permitida; usando '{}'", DEFAULT_SORT);
+            query = SORT_COLUMNS.get(DEFAULT_SORT);
+        }
+        return executeQuery(query, category);
     }
 
-    /** VULN (java:S2077): DELETE montado por concatenacao — injecao com efeito destrutivo. */
+    /** DELETE parametrizado: o nome vindo do request nao consegue alterar a query. */
     public int deleteByName(String name) {
-        String query = "DELETE FROM products WHERE name = '" + name + "'";
-        try (Connection connection = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
-                Statement statement = connection.createStatement()) {
-            return statement.executeUpdate(query);
+        String query = "DELETE FROM products WHERE name = ?";
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(query)) {
+            statement.setString(1, name);
+            return statement.executeUpdate();
         } catch (SQLException e) {
-            // Code Smell: excecao impressa em stdout em vez de logada.
-            e.printStackTrace();
+            LOGGER.error("Falha ao remover produto", e);
             return 0;
         }
     }
 
-    /**
-     * Versao correta, usada na Aula 2.6 para o comparativo lado a lado com
-     * {@link #searchByName(String)}.
-     */
-    public List<String> searchByNameSafe(String searchTerm) {
-        String query = "SELECT name FROM products WHERE name LIKE ?";
-        try (Connection connection = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
-                java.sql.PreparedStatement statement = connection.prepareStatement(query)) {
-            statement.setString(1, "%" + searchTerm + "%");
-            List<String> names = new ArrayList<>();
+    private List<String> executeQuery(String query, String parameter) {
+        List<String> names = new ArrayList<>();
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(query)) {
+            statement.setString(1, parameter);
             try (ResultSet rs = statement.executeQuery()) {
                 while (rs.next()) {
                     names.add(rs.getString("name"));
                 }
             }
-            return names;
         } catch (SQLException e) {
-            e.printStackTrace();
-            return new ArrayList<>();
-        }
-    }
-
-    private List<String> executeQuery(String query) {
-        List<String> names = new ArrayList<>();
-        try (Connection connection = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
-                Statement statement = connection.createStatement();
-                ResultSet rs = statement.executeQuery(query)) {
-            while (rs.next()) {
-                names.add(rs.getString("name"));
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
+            LOGGER.error("Falha ao consultar produtos", e);
         }
         return names;
     }

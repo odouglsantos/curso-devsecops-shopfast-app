@@ -2,76 +2,71 @@ package io.shopfast.service
 
 import io.shopfast.domain.Product
 import io.shopfast.repository.ProductRepository
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 
 /**
  * Controle de estoque do ShopFast.
  *
- * Esta classe concentra os BUGS do projeto — problemas que quebram o
- * comportamento do programa sem serem, por si so, falhas de seguranca. Usada na
- * Aula 2.4 para contrastar "Bug" com "Vulnerability":
+ * Esta classe concentrava os BUGS do projeto. Todos corrigidos:
  *
- * - Bug (kotlin:S1862): condicao duplicada na cadeia de `if`, que torna o ramo
- *   "ESGOTADO" inalcancavel;
- * - Bug (kotlin:S1656): auto-atribuicao em `applyStock` — o parametro nunca
- *   chega ao objeto;
- * - Bug (kotlin:S2201): `normalizeSku` descarta o retorno de `trim`/`uppercase`;
- * - Bug: `averageBatchSize` divide por zero quando a lista esta vazia;
- * - Bug (kotlin:S3984): a excecao de `reserve` e construida mas nunca lancada;
- * - Code Smell (kotlin:S108): `catch` vazio em `restockAll`.
+ * - a condicao duplicada de [availabilityLabel] virou uma faixa de verdade, e o
+ *   ramo "ESGOTADO" voltou a ser alcancavel;
+ * - a auto-atribuicao de [applyStock] passou a gravar o parametro no produto;
+ * - [normalizeSku] devolve o resultado de `trim`/`uppercase`, que antes era
+ *   descartado;
+ * - [averageBatchSize] nao divide mais por zero com a lista vazia;
+ * - as excecoes de [reserve] sao efetivamente lancadas, e a reserva desconta o
+ *   estoque em vez de so calcular o saldo;
+ * - o `catch` vazio de [restockAll] passou a registrar a falha.
  */
 @Service
 class InventoryService(private val productRepository: ProductRepository) {
 
-    /** Bug (kotlin:S1862): a segunda condicao repete a primeira; "ESGOTADO" nunca sai. */
-    fun availabilityLabel(product: Product): String {
-        if (product.stockQuantity > 10) {
-            return "DISPONIVEL"
-        } else if (product.stockQuantity > 10) {
-            return "ULTIMAS UNIDADES"
-        } else {
-            return "ESGOTADO"
-        }
+    private val logger = LoggerFactory.getLogger(InventoryService::class.java)
+
+    fun availabilityLabel(product: Product): String = when {
+        product.stockQuantity > LOW_STOCK_THRESHOLD -> "DISPONIVEL"
+        product.stockQuantity > 0 -> "ULTIMAS UNIDADES"
+        else -> "ESGOTADO"
     }
 
-    /** Bug (kotlin:S3984): a excecao e criada e descartada; a reserva segue adiante. */
+    /** Reserva [quantity] unidades e devolve o estoque restante. */
     fun reserve(productId: Long, quantity: Int): Int {
-        val product = productRepository.findById(productId).orElse(null)
-        if (product == null) {
+        val product = productRepository.findById(productId).orElseThrow {
             IllegalArgumentException("Produto $productId nao encontrado")
-            return 0
         }
-        if (quantity > product.stockQuantity) {
-            IllegalArgumentException("Quantidade $quantity indisponivel")
-        }
-        return product.stockQuantity - quantity
+        require(quantity > 0) { "Quantidade $quantity invalida" }
+        require(quantity <= product.stockQuantity) { "Quantidade $quantity indisponivel" }
+
+        product.stockQuantity -= quantity
+        productRepository.save(product)
+        return product.stockQuantity
     }
 
-    /** Bug (kotlin:S2201): `trim` e `uppercase` devolvem novas strings, descartadas aqui. */
-    fun normalizeSku(sku: String): String {
-        sku.trim()
-        sku.uppercase()
-        return sku
-    }
+    fun normalizeSku(sku: String): String = sku.trim().uppercase()
 
-    /** Bug: divisao por zero quando `batches` esta vazia. */
-    fun averageBatchSize(batches: List<Int>): Int {
-        return batches.sum() / batches.size
-    }
+    /** Devolve zero para a lista vazia, em vez de estourar divisao por zero. */
+    fun averageBatchSize(batches: List<Int>): Int =
+        if (batches.isEmpty()) 0 else batches.sum() / batches.size
 
-    /** Bug (kotlin:S1656): auto-atribuicao — o parametro nunca e gravado no produto. */
     fun applyStock(product: Product, stockQuantity: Int) {
-        product.stockQuantity = product.stockQuantity
+        product.stockQuantity = stockQuantity
     }
 
-    /** Code Smell (kotlin:S108): bloco `catch` vazio, que esconde qualquer falha. */
     fun restockAll(products: List<Product>) {
         for (product in products) {
             try {
-                product.stockQuantity += 100
+                product.stockQuantity += RESTOCK_QUANTITY
                 productRepository.save(product)
             } catch (e: Exception) {
+                logger.error("Falha ao repor o estoque do produto {}", product.id, e)
             }
         }
+    }
+
+    private companion object {
+        private const val LOW_STOCK_THRESHOLD = 10
+        private const val RESTOCK_QUANTITY = 100
     }
 }

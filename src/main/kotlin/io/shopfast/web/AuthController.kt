@@ -1,68 +1,86 @@
 package io.shopfast.web
 
+import io.shopfast.config.SessionTokenAuthenticationFilter
 import io.shopfast.service.AuthService
-import jakarta.servlet.http.Cookie
-import jakarta.servlet.http.HttpServletResponse
+import org.springframework.http.HttpHeaders
+import org.springframework.http.ResponseCookie
 import org.springframework.http.ResponseEntity
-import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
-import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
 class LoginRequest(val username: String, val password: String)
 
 class RegisterRequest(val username: String, val password: String, val email: String)
 
+class PasswordResetRequest(val username: String)
+
 @RestController
 @RequestMapping("/api/auth")
 class AuthController(private val authService: AuthService) {
 
+    /**
+     * O cookie de sessao saiu com `HttpOnly`, `Secure` e `SameSite=Strict`:
+     * fora do alcance de JavaScript, so trafega em HTTPS e nao acompanha
+     * requisicao vinda de outro site, o que fecha o CSRF pela raiz.
+     */
     @PostMapping("/login")
-    fun login(@RequestBody request: LoginRequest, response: HttpServletResponse): ResponseEntity<Map<String, String>> {
+    fun login(@RequestBody request: LoginRequest): ResponseEntity<Map<String, String>> {
         val token = authService.login(request.username, request.password)
             ?: return ResponseEntity.status(401).body(mapOf("error" to "credenciais invalidas"))
 
-        // VULN (kotlin:S2092 e kotlin:S3330): cookie de sessao sem Secure e sem HttpOnly,
-        // acessivel por JavaScript e trafegando em HTTP puro.
-        val cookie = Cookie("SHOPFAST_SESSION", token)
-        cookie.isHttpOnly = false
-        cookie.secure = false
-        cookie.path = "/"
-        response.addCookie(cookie)
+        val cookie = ResponseCookie.from(SessionTokenAuthenticationFilter.SESSION_COOKIE, token)
+            .httpOnly(true)
+            .secure(true)
+            .sameSite("Strict")
+            .path("/")
+            .maxAge(SESSION_TTL_SECONDS)
+            .build()
 
-        return ResponseEntity.ok(mapOf("token" to token))
+        return ResponseEntity.ok()
+            .header(HttpHeaders.SET_COOKIE, cookie.toString())
+            .body(mapOf("token" to token))
     }
 
+    /** A resposta nao carrega mais o hash da senha. */
     @PostMapping("/register")
     fun register(@RequestBody request: RegisterRequest): ResponseEntity<Map<String, Any?>> {
         val user = authService.register(request.username, request.password, request.email)
-        // VULN: o hash da senha volta na resposta da API
         return ResponseEntity.ok(
             mapOf(
                 "id" to user.id,
                 "username" to user.username,
-                "passwordHash" to user.passwordHash,
+                "email" to user.email,
             ),
         )
     }
 
     /**
-     * VULN: o token de reset e devolvido direto na resposta HTTP, sem qualquer
-     * verificacao de posse do e-mail. Qualquer um reseta a senha de qualquer conta.
+     * POST com o usuario no corpo, e nao em query string, para o nome nao ficar
+     * em log de proxy e no historico do navegador. A resposta e sempre a mesma,
+     * exista a conta ou nao — e o token de reset **nao** volta pela API: quem o
+     * recebe e o dono do e-mail cadastrado.
      */
-    @GetMapping("/reset-token")
-    fun resetToken(@RequestParam("username") username: String): Map<String, String> {
-        return mapOf("resetToken" to authService.generatePasswordResetToken(username))
+    @PostMapping("/password-reset")
+    fun requestPasswordReset(
+        @RequestBody request: PasswordResetRequest,
+    ): ResponseEntity<Map<String, String>> {
+        authService.requestPasswordReset(request.username)
+        return ResponseEntity.accepted().body(
+            mapOf("message" to "Se a conta existir, enviaremos as instrucoes por e-mail."),
+        )
     }
 
-    /**
-     * VULN (escalonamento de privilegio): o papel vem do proprio token enviado pelo
-     * cliente, que nao e assinado.
-     */
-    @GetMapping("/whoami")
-    fun whoami(@RequestParam("token") token: String): Map<String, String> {
-        return mapOf("role" to authService.resolveRole(token))
+    /** O papel vem do `SecurityContext`, nao de um token que o cliente escolhe. */
+    @PostMapping("/whoami")
+    fun whoami(authentication: Authentication): Map<String, String?> = mapOf(
+        "userId" to authentication.name,
+        "role" to authentication.authorities.firstOrNull()?.authority,
+    )
+
+    private companion object {
+        private const val SESSION_TTL_SECONDS = 3600L
     }
 }

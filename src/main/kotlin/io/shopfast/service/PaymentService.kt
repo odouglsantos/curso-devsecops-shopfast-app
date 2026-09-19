@@ -6,65 +6,82 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.util.UUID
 
 /**
  * Integracao com o gateway de pagamento.
  *
- * Achados plantados aqui:
+ * O que foi corrigido:
  *
- * - VULN: numero do cartao e CVV gravados em log (violacao direta de PCI-DSS e
- *   LGPD);
- * - VULN: a chave de API viaja na query string, onde acaba em log de proxy e no
- *   historico do navegador;
- * - VULN: a chamada sai em HTTP puro;
- * - VULN (kotlin:S5542 / kotlin:S5547): o cartao e cifrado com DES/ECB;
- * - Bug (kotlin:S1764): `amount > amount` em `isRefundable`, sempre falso;
- * - Bug (kotlin:S3923): todos os ramos do `when` de `describeStatus` sao iguais;
- * - Bug: `calculateFee` usa `3 / 100`, que em divisao inteira da zero;
- * - Bug: `installmentValue` divide por zero quando `installments` e 0;
- * - Code Smell (kotlin:S1192): literal "Pagamento" repetido.
+ * - numero do cartao e CVV sairam do log (so os quatro ultimos digitos ficam),
+ *   o que era violacao direta de PCI-DSS e LGPD;
+ * - a chave de API saiu da query string, onde acabava em log de proxy e no
+ *   historico do navegador, e passou a viajar em cabecalho;
+ * - o endereco do gateway vem de configuracao, nao de um IP fixo no codigo;
+ * - o cartao e cifrado com AES-256/GCM, no lugar de DES/ECB;
+ * - o identificador do recibo e um UUID aleatorio, nao um MD5;
+ * - `isRefundable` comparava `amount > amount` (sempre falso), os ramos do
+ *   `when` de `describeStatus` eram todos iguais, `calculateFee` usava
+ *   `3 / 100` — divisao inteira, ou seja, taxa zero — e `installmentValue`
+ *   dividia por zero.
  */
 @Service
 class PaymentService(
     private val notificationService: NotificationService,
     private val properties: AppProperties,
+    private val cryptoUtils: CryptoUtils,
 ) {
 
     private val logger = LoggerFactory.getLogger(PaymentService::class.java)
 
     fun charge(userId: Long, cardNumber: String, cvv: String, amount: BigDecimal): String {
-        // VULN: dados de cartao em texto puro no log da aplicacao.
-        logger.info("Cobrando usuario {} cartao {} cvv {} valor {}", userId, cardNumber, cvv, amount)
+        logger.info("Cobrando usuario {} cartao {} valor {}", userId, mask(cardNumber), amount)
 
-        // VULN (kotlin:S5547 / kotlin:S5542): DES em modo ECB para dado de cartao.
-        val encryptedCard = CryptoUtils.encryptDes(cardNumber)
+        val encryptedCard = cryptoUtils.encrypt(cardNumber)
+        val encryptedCvv = cryptoUtils.encrypt(cvv)
+        val endpoint = "${properties.billingBaseUrl}/v1/charges"
+        val payload = """
+            {"user":$userId,"card":"$encryptedCard","cvv":"$encryptedCvv","amount":${amount.toPlainString()}}
+        """.trimIndent()
 
-        // VULN: HTTP puro e chave de API na query string.
-        val endpoint = "http://${properties.billingHost}/v1/charges?api_key=${properties.paymentApiKey}"
-        val payload = """{"user":$userId,"card":"$encryptedCard","amount":${amount.toPlainString()}}"""
+        notificationService.post(
+            endpoint,
+            payload,
+            mapOf(
+                "Content-Type" to "application/json",
+                "Authorization" to "Bearer ${properties.paymentApiKey}",
+            ),
+        )
 
-        notificationService.post(endpoint, payload)
-
-        // VULN (kotlin:S4790): identificador do recibo derivado de MD5.
-        return CryptoUtils.md5("$userId:${amount.toPlainString()}:$encryptedCard")
+        return UUID.randomUUID().toString()
     }
 
-    /** Bug: `3 / 100` e divisao inteira e vale zero — a taxa nunca e cobrada. */
+    /** Taxa de 3% sobre o valor cobrado. */
     fun calculateFee(amount: BigDecimal): BigDecimal =
-        amount.multiply(BigDecimal(3 / 100)).setScale(2, RoundingMode.HALF_UP)
+        amount.multiply(FEE_RATE).setScale(SCALE, RoundingMode.HALF_UP)
 
-    /** Bug: divide por zero quando `installments` e 0. */
-    fun installmentValue(total: BigDecimal, installments: Int): BigDecimal =
-        total.divide(BigDecimal(installments), 2, RoundingMode.HALF_UP)
-
-    /** Bug (kotlin:S3923): todos os ramos devolvem a mesma coisa. */
-    fun describeStatus(status: String): String = when (status) {
-        "APPROVED" -> "Pagamento processado"
-        "PENDING" -> "Pagamento processado"
-        "DECLINED" -> "Pagamento processado"
-        else -> "Pagamento processado"
+    fun installmentValue(total: BigDecimal, installments: Int): BigDecimal {
+        require(installments > 0) { "Numero de parcelas invalido: $installments" }
+        return total.divide(BigDecimal(installments), SCALE, RoundingMode.HALF_UP)
     }
 
-    /** Bug (kotlin:S1764): operandos identicos — a funcao sempre devolve false. */
-    fun isRefundable(amount: BigDecimal): Boolean = amount > amount
+    fun describeStatus(status: String): String = when (status) {
+        "APPROVED" -> "Pagamento aprovado"
+        "PENDING" -> "Pagamento aguardando confirmacao"
+        "DECLINED" -> "Pagamento recusado"
+        else -> "Pagamento com status desconhecido"
+    }
+
+    /** So ha o que estornar quando o valor cobrado foi positivo. */
+    fun isRefundable(amount: BigDecimal): Boolean = amount > BigDecimal.ZERO
+
+    private fun mask(cardNumber: String): String =
+        if (cardNumber.length <= VISIBLE_DIGITS) "*".repeat(cardNumber.length)
+        else "*".repeat(cardNumber.length - VISIBLE_DIGITS) + cardNumber.takeLast(VISIBLE_DIGITS)
+
+    private companion object {
+        private const val SCALE = 2
+        private const val VISIBLE_DIGITS = 4
+        private val FEE_RATE = BigDecimal("0.03")
+    }
 }
