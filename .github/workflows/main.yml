@@ -25,6 +25,7 @@ jobs:
 
   sonar-scan:
     runs-on: ubuntu-latest
+    environment: dev
     permissions:
       contents: read
     steps:
