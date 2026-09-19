@@ -1,0 +1,29 @@
+name: Pull Request
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+jobs:
+  build-and-quality:
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name:
+        uses: actions/setup-java
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build & Quality
+        run: >
+          ./gradlew build sonar -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300
