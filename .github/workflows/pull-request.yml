@@ -18,8 +18,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name:
-        uses: actions/setup-java
+      - name: Setup JDK
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -27,3 +27,6 @@ jobs:
       - name: Build & Quality
         run: >
           ./gradlew build sonar -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
