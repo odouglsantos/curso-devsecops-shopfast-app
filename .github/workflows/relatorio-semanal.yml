@@ -13,6 +13,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+      vulnerability-alerts: read
     steps:
       - name: Contagem SonarQube por severidade
         run: |
@@ -38,9 +39,14 @@ jobs:
 
       - name: Contagem Dependabot por severidade
         run: |
-          gh api "repos/${{ github.repository }}/dependabot/alerts" --jq \
-            '[.[] | select(.state=="open")] | group_by(.security_advisory.severity) | map("  \(.[0].security_advisory.severity): \(length)") | .[]' \
-            > dependabot-contagem.txt
+          if gh api "repos/${{ github.repository }}/dependabot/alerts" > dependabot.json 2> dependabot.err; then
+            jq -r '[.[] | select(.state=="open")] | group_by(.security_advisory.severity)
+                   | map("  \(.[0].security_advisory.severity): \(length)") | .[]' \
+              dependabot.json > dependabot-contagem.txt
+          else
+            echo "::warning::Dependabot indisponivel: $(cat dependabot.err)"
+            echo "  (indisponivel)" > dependabot-contagem.txt
+          fi
 
           [ -s dependabot-contagem.txt ] || echo "  Nenhum alerta em aberto" > dependabot-contagem.txt
         env:
