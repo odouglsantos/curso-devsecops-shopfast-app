@@ -2,10 +2,10 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.*
 
 plugins {
-    kotlin("jvm") version "2.4.10"
-    kotlin("plugin.spring") version "2.4.10"
-    kotlin("plugin.jpa") version "2.4.10"
-    id("org.springframework.boot") version "4.1.1"
+    kotlin("jvm") version "2.4.21"
+    kotlin("plugin.spring") version "2.4.21"
+    kotlin("plugin.jpa") version "2.4.21"
+    id("org.springframework.boot") version "4.1.2"
     id("io.spring.dependency-management") version "1.1.7"
     id("org.sonarqube") version "7.5.0.8588"
     jacoco
@@ -35,7 +35,7 @@ dependencies {
 
     // Contrato OpenAPI gerado em runtime (/v3/api-docs). E o que permite ao OWASP ZAP
     // descobrir sozinho rotas, metodos, query params e corpos no Modulo 3 (DAST).
-    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1")
+    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.2.0")
 
     // NOTA DIDATICA: versoes propositalmente desatualizadas, com CVEs conhecidos.
     // Serao usadas no modulo de SCA (Dependency-Check / Trivy).
